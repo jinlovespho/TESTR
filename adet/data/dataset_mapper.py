@@ -1,4 +1,5 @@
 import copy
+import cv2 
 import logging
 import os.path as osp
 
@@ -21,6 +22,26 @@ from .detection_utils import (annotations_to_instances, build_augmentation,
 """
 This file contains the default mapping that's applied to "dataset dicts".
 """
+
+import pdb
+import sys
+from typing import Any
+
+
+class ForkedPdb(pdb.Pdb):
+    """
+    PDB Subclass for debugging multi-processed code
+    Suggested in: https://stackoverflow.com/questions/4716533/how-to-attach-debugger-to-a-python-subproccess
+    """
+
+    def interaction(self, *args: Any, **kwargs: Any) -> None:
+        _stdin = sys.stdin
+        try:
+            sys.stdin = open("/dev/stdin")
+            pdb.Pdb.interaction(self, *args, **kwargs)
+        finally:
+            sys.stdin = _stdin
+            
 
 __all__ = ["DatasetMapperWithBasis"]
 
@@ -92,12 +113,12 @@ class DatasetMapperWithBasis(DatasetMapper):
         Returns:
             dict: a format that builtin models in detectron2 accept
         """
+        # ForkedPdb().set_trace()
+        # breakpoint()
         dataset_dict = copy.deepcopy(dataset_dict)  # it will be modified by code below
         # USER: Write your own image loading if it's not from a file
         try:
-            image = utils.read_image(
-                dataset_dict["file_name"], format=self.image_format
-            )
+            image = utils.read_image(dataset_dict["file_name"], format=self.image_format)
         except Exception as e:
             print(dataset_dict["file_name"])
             print(e)
@@ -179,9 +200,28 @@ class DatasetMapperWithBasis(DatasetMapper):
                 for obj in dataset_dict.pop("annotations")
                 if obj.get("iscrowd", 0) == 0
             ]
-            instances = annotations_to_instances(
-                annos, image_shape, mask_format=self.instance_mask_format
-            )
+            instances = annotations_to_instances(annos, image_shape, mask_format=self.instance_mask_format)
+            
+            
+            
+            # # PHO - vis data
+            # boxes = instances.gt_boxes.tensor.cpu().numpy()   # shape: (N, 4)
+            # polys = instances.polygons                        # list of list of polygons
+            # img_box = image.copy()
+            # img_poly = image.copy()
+            # for i in range(len(polys)):
+            #     box = boxes[i]  # [x1, y1, x2, y2]
+            #     poly = polys[i]  # list of (N, 2) polygons
+            #     # Draw bounding box
+            #     x1, y1, x2, y2 = map(int, box)
+            #     poly_np = np.array(poly).astype(np.int32).reshape(-1, 2)
+            #     cv2.rectangle(img_box, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            #     cv2.polylines(img_poly, [poly_np], isClosed=True, color=(0, 255, 0), thickness=2)
+            # cv2.imwrite('./img_box.jpg', img_box)
+            # cv2.imwrite('./img_poly.jpg', img_poly)
+            
+            # breakpoint()
+            
 
             # After transforms such as cropping are applied, the bounding box may no longer
             # tightly bound the object. As an example, imagine a triangle object

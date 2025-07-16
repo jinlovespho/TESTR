@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=3 python tools/train_net.py --config-file configs/TESTR/TotalText/TESTR_R_50_Polygon.yaml --eval-only MODEL.WEIGHTS weights/totaltext_testr_R_50_polygon.pth

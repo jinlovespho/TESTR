@@ -71,8 +71,10 @@ def annotations_to_instances(annos, image_size, mask_format="polygon"):
 
     if "polygons" in annos[0]:
         polys = [obj.get("polygons", []) for obj in annos]
-        instance.polygons = torch.as_tensor(polys, dtype=torch.float32)
-
+        # instance.polygons = torch.as_tensor(polys, dtype=torch.float32)
+        polys_np = np.array(polys)
+        instance.polygons = torch.from_numpy(polys_np).float()
+    
     return instance
 
 
@@ -83,27 +85,39 @@ def build_augmentation(cfg, is_train):
     Returns:
         list[Augmentation]
     """
-    if is_train:
-        min_size = cfg.INPUT.MIN_SIZE_TRAIN
-        max_size = cfg.INPUT.MAX_SIZE_TRAIN
-        sample_style = cfg.INPUT.MIN_SIZE_TRAIN_SAMPLING
+    # breakpoint()
+    if cfg.INPUT.FIX_SIZE:
+        model_h = cfg.INPUT.FIX_SIZE_H
+        model_w = cfg.INPUT.FIX_SIZE_W
+        
+        logger = logging.getLogger(__name__)
+        
+        augmentation=[]
+        augmentation.append( T.Resize((model_h, model_w)) )
+        
     else:
-        min_size = cfg.INPUT.MIN_SIZE_TEST
-        max_size = cfg.INPUT.MAX_SIZE_TEST
-        sample_style = "choice"
-    if sample_style == "range":
-        assert (
-            len(min_size) == 2
-        ), "more than 2 ({}) min_size(s) are provided for ranges".format(len(min_size))
+        if is_train:
+            min_size = cfg.INPUT.MIN_SIZE_TRAIN
+            max_size = cfg.INPUT.MAX_SIZE_TRAIN
+            sample_style = cfg.INPUT.MIN_SIZE_TRAIN_SAMPLING
+        else:
+            min_size = cfg.INPUT.MIN_SIZE_TEST
+            max_size = cfg.INPUT.MAX_SIZE_TEST
+            sample_style = "choice"
+        if sample_style == "range":
+            assert (
+                len(min_size) == 2
+            ), "more than 2 ({}) min_size(s) are provided for ranges".format(len(min_size))
 
-    logger = logging.getLogger(__name__)
-
-    augmentation = []
-    augmentation.append(T.ResizeShortestEdge(min_size, max_size, sample_style))
-    if is_train:
-        if cfg.INPUT.HFLIP_TRAIN:
-            augmentation.append(T.RandomFlip())
-        logger.info("Augmentations used in training: " + str(augmentation))
+        logger = logging.getLogger(__name__)
+        
+        augmentation = []
+        augmentation.append(T.ResizeShortestEdge(min_size, max_size, sample_style))
+        if is_train:
+            if cfg.INPUT.HFLIP_TRAIN:
+                augmentation.append(T.RandomFlip())
+            logger.info("Augmentations used in training: " + str(augmentation))
+            
     return augmentation
 
 

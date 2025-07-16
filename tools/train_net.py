@@ -257,7 +257,6 @@ def setup(args):
 
 def main(args):
     cfg = setup(args)
-
     if args.eval_only:
         model = Trainer.build_model(cfg)
         AdetCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
@@ -273,7 +272,8 @@ def main(args):
     """
     If you'd like to do anything fancier than the standard training logic,
     consider writing your own training loop or subclassing the trainer.
-    """
+    """    
+    # breakpoint()
     trainer = Trainer(cfg)
     trainer.resume_or_load(resume=args.resume)
     if cfg.TEST.AUG.ENABLED:
