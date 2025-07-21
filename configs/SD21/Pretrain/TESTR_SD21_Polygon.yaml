@@ -1,8 +1,6 @@
 _BASE_: "Base-Pretrain-Polygon.yaml"
+
 MODEL:
-  WEIGHTS: "detectron2://ImageNetPretrained/torchvision/R-50.pkl"
-  RESNETS:
-    DEPTH: 50
   TRANSFORMER:
     NUM_FEATURE_LEVELS: 4
     ENC_LAYERS: 6
@@ -14,17 +12,30 @@ MODEL:
     NUM_QUERIES: 100
     ENC_N_POINTS: 4
     DEC_N_POINTS: 4
+  
+  DIFFUSION:
+    BACKBONE: "SD21"
+    EXTRACT_FEAT: True
+
 SOLVER:
+  AMP:
+    ENABLED: False
   IMS_PER_BATCH: 2
+  GRAD_ACCUM_STEPS: 4
   BASE_LR: 1e-4
   LR_BACKBONE: 1e-5
   WARMUP_ITERS: 0
   STEPS: (340000,)
-  MAX_ITER: 440000
+  MAX_ITER: 400000
   CHECKPOINT_PERIOD: 10000
+
 TEST:
   EVAL_PERIOD: 10000
-OUTPUT_DIR: "output/TESTR/pretrain/TESTR_R_50_Polygon"
-PHO_ARGS:
-  JINLOVESPHO: 2
+OUTPUT_DIR: "output/pretrain/totaltext/TESTR_SD21_lr1e4_bs2"
+
+LOG_ARGS:
+  LOG_NUM_IMG: 4
+  LOG_EVERY_N: 10000
+
+
 

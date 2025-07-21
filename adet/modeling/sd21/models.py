@@ -7,6 +7,7 @@ from adet.layers.deformable_transformer import DeformableTransformer
 
 from adet.layers.pos_encoding import PositionalEncoding1D
 from adet.utils.misc import NestedTensor, inverse_sigmoid_offset, nested_tensor_from_tensor_list, sigmoid_offset
+from adet.layers.pos_encoding import DiffusionPositionalEncoding2D
 
 class MLP(nn.Module):
     """ Very simple multi-layer perceptron (also called FFN)"""
@@ -73,36 +74,21 @@ class TESTR_SD21(nn.Module):
         # shared prior between instances (objects)
         self.ctrl_point_embed = nn.Embedding(self.num_ctrl_points, self.d_model)
         self.text_embed = nn.Embedding(self.max_text_len, self.d_model)
+        
+        # PHO
+        num_channels = [1280, 1280, 640, 320]
+        self.diff_feat_proj = nn.ModuleList([
+            nn.Sequential(
+                nn.Conv2d(num_channels[i], self.d_model, kernel_size=1),     # 1x1 projection
+                nn.GroupNorm(32, self.d_model),
+                nn.GELU(),
 
-                
-        if self.num_feature_levels > 1:
-            strides = [8, 16, 32]
-            num_channels = [512, 1024, 2048]
-            num_backbone_outs = len(strides)
-            input_proj_list = []
-            for _ in range(num_backbone_outs):
-                in_channels = num_channels[_]
-                input_proj_list.append(nn.Sequential(
-                    nn.Conv2d(in_channels, self.d_model, kernel_size=1),
-                    nn.GroupNorm(32, self.d_model),
-                ))
-            for _ in range(self.num_feature_levels - num_backbone_outs):
-                input_proj_list.append(nn.Sequential(
-                    nn.Conv2d(in_channels, self.d_model,
-                              kernel_size=3, stride=2, padding=1),
-                    nn.GroupNorm(32, self.d_model),
-                ))
-                in_channels = self.d_model
-            self.input_proj = nn.ModuleList(input_proj_list)
-        else:
-            strides = [32]
-            num_channels = [2048]
-            self.input_proj = nn.ModuleList([
-                nn.Sequential(
-                    nn.Conv2d(
-                        num_channels[0], self.d_model, kernel_size=1),
-                    nn.GroupNorm(32, self.d_model),
-                )])
+                nn.Conv2d(self.d_model, self.d_model, kernel_size=3, padding=1),  # 3x3 conv
+                nn.GroupNorm(32, self.d_model),
+                nn.GELU(),
+            )
+            for i in range(len(num_channels))
+        ])
         self.aux_loss = cfg.MODEL.TRANSFORMER.AUX_LOSS
 
         prior_prob = 0.01
@@ -111,7 +97,7 @@ class TESTR_SD21(nn.Module):
         self.bbox_class.bias.data = torch.ones(self.num_classes) * bias_value
         nn.init.constant_(self.ctrl_point_coord.layers[-1].weight.data, 0)
         nn.init.constant_(self.ctrl_point_coord.layers[-1].bias.data, 0)
-        for proj in self.input_proj:
+        for proj in self.diff_feat_proj:
             nn.init.xavier_uniform_(proj[0].weight, gain=1)
             nn.init.constant_(proj[0].bias, 0)
 
@@ -126,6 +112,7 @@ class TESTR_SD21(nn.Module):
         self.transformer.bbox_class_embed = self.bbox_class
         self.transformer.bbox_embed = self.bbox_coord
 
+        self.pos_enc_2d= DiffusionPositionalEncoding2D(128, normalize=True)
         self.to(self.device)
 
 
@@ -144,42 +131,19 @@ class TESTR_SD21(nn.Module):
                                 dictionnaries containing the two above keys for each decoder layer.
         """
         
-        breakpoint()
+        extracted_feats = samples 
+        pos = [self.pos_enc_2d(x) for x in extracted_feats]
         
-        if isinstance(samples, (list, torch.Tensor)):
-            samples = nested_tensor_from_tensor_list(samples)
-        features, pos = self.backbone(samples)
-
-        if self.num_feature_levels == 1:
-            features = [features[-1]]
-            pos = [pos[-1]]
-
         srcs = []
         masks = []
-        for l, feat in enumerate(features):
-            src, mask = feat.decompose()
-            srcs.append(self.input_proj[l](src))
-            masks.append(mask)
-            assert mask is not None
-        if self.num_feature_levels > len(srcs):
-            _len_srcs = len(srcs)
-            for l in range(_len_srcs, self.num_feature_levels):
-                if l == _len_srcs:
-                    src = self.input_proj[l](features[-1].tensors)
-                else:
-                    src = self.input_proj[l](srcs[-1])
-                m = masks[0]
-                mask = F.interpolate(
-                    m[None].float(), size=src.shape[-2:]).to(torch.bool)[0]
-                pos_l = self.backbone[1](NestedTensor(src, mask)).to(src.dtype)
-                srcs.append(src)
-                masks.append(mask)
-                pos.append(pos_l)
+        for l, feat in enumerate(extracted_feats):
+            b, _, feat_H, feat_W = feat.shape
+            srcs.append(self.diff_feat_proj[l](feat))
+            masks.append(torch.zeros(b, feat_H, feat_W).to(bool).to(feat.device))
 
-        # n_points, embed_dim --> n_objects, n_points, embed_dim
-        ctrl_point_embed = self.ctrl_point_embed.weight[None, ...].repeat(self.num_proposals, 1, 1)
-        text_pos_embed = self.text_pos_embed(self.text_embed.weight)[None, ...].repeat(self.num_proposals, 1, 1)
-        text_embed = self.text_embed.weight[None, ...].repeat(self.num_proposals, 1, 1)
+        ctrl_point_embed = self.ctrl_point_embed.weight[None, ...].repeat(self.num_proposals, 1, 1)                     
+        text_pos_embed = self.text_pos_embed(self.text_embed.weight)[None, ...].repeat(self.num_proposals, 1, 1)        
+        text_embed = self.text_embed.weight[None, ...].repeat(self.num_proposals, 1, 1)                                 
 
         hs, hs_text, init_reference, inter_references, enc_outputs_class, enc_outputs_coord_unact = self.transformer(
             srcs, masks, pos, ctrl_point_embed, text_embed, text_pos_embed, text_mask=None)
@@ -204,14 +168,15 @@ class TESTR_SD21(nn.Module):
             outputs_coord = sigmoid_offset(tmp, offset=self.sigmoid_offset)
             outputs_classes.append(outputs_class)
             outputs_coords.append(outputs_coord)
-        outputs_class = torch.stack(outputs_classes)
-        outputs_coord = torch.stack(outputs_coords)
-        outputs_text = torch.stack(outputs_texts)
 
-        out = {'pred_logits': outputs_class[-1],
-               'pred_ctrl_points': outputs_coord[-1],
-               'pred_texts': outputs_text[-1]}
-        if self.aux_loss:
+        outputs_class = torch.stack(outputs_classes)    
+        outputs_coord = torch.stack(outputs_coords)     
+        outputs_text = torch.stack(outputs_texts)       
+
+        out = {'pred_logits': outputs_class[-1],        
+               'pred_ctrl_points': outputs_coord[-1],   
+               'pred_texts': outputs_text[-1]}          
+        if self.aux_loss:   # t
             out['aux_outputs'] = self._set_aux_loss(
                 outputs_class, outputs_coord, outputs_text)
 
@@ -219,6 +184,7 @@ class TESTR_SD21(nn.Module):
         out['enc_outputs'] = {
             'pred_logits': enc_outputs_class, 'pred_boxes': enc_outputs_coord}
         return out
+
 
     @torch.jit.unused
     def _set_aux_loss(self, outputs_class, outputs_coord, outputs_text):

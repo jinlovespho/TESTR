@@ -188,7 +188,18 @@ class TransformerDetector(nn.Module):
             for k in loss_dict.keys():
                 if k in weight_dict:
                     loss_dict[k] *= weight_dict[k]
-            return loss_dict
+
+            ctrl_point_cls = output["pred_logits"]
+            ctrl_point_coord = output["pred_ctrl_points"]
+            text_pred = output["pred_texts"]
+            results = self.inference(ctrl_point_cls, ctrl_point_coord, text_pred, images.image_sizes)
+            processed_results = []
+            for results_per_image, input_per_image, image_size in zip(results, batched_inputs, images.image_sizes):
+                height = input_per_image.get("height", image_size[0])
+                width = input_per_image.get("width", image_size[1])
+                r = detector_postprocess(results_per_image, height, width)
+                processed_results.append({"instances": r})
+            return loss_dict, processed_results
         else:
             ctrl_point_cls = output["pred_logits"]
             ctrl_point_coord = output["pred_ctrl_points"]
@@ -201,6 +212,7 @@ class TransformerDetector(nn.Module):
                 r = detector_postprocess(results_per_image, height, width)
                 processed_results.append({"instances": r})
             return processed_results
+
 
     def prepare_targets(self, targets):
         new_targets = []

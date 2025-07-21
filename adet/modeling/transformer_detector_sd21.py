@@ -112,12 +112,24 @@ class TransformerDetectorSD21(nn.Module):
         super().__init__()
         self.device = torch.device(cfg.MODEL.DEVICE)
         
+        self.cfg = cfg 
         
-        from diffusers.models.unets.unet_2d_condition import UNet2DConditionModel
-        from diffusers.models import AutoencoderKL
+        # PHO 
+        if self.cfg.MODEL.DIFFUSION.BACKBONE == 'SD21':
+            
+            from diffusers.models.unets.unet_2d_condition import UNet2DConditionModel
+            from diffusers.models import AutoencoderKL
+            from transformers import CLIPTextModel, CLIPTokenizer
+            
+            self.diffusion_model = UNet2DConditionModel.from_pretrained("stabilityai/stable-diffusion-2-1", subfolder='unet')
+            self.vae = AutoencoderKL.from_pretrained("stabilityai/stable-diffusion-2-1", subfolder="vae")
+            self.tokenizer = CLIPTokenizer.from_pretrained("stabilityai/stable-diffusion-2-1", subfolder="tokenizer")
+            self.text_encoder = CLIPTextModel.from_pretrained("stabilityai/stable-diffusion-2-1", subfolder="text_encoder")
+            self.text_encoder.eval()
         
-        self.diffusion_model = UNet2DConditionModel.from_pretrained("stabilityai/stable-diffusion-2-1", subfolder='unet')
-        self.vae = AutoencoderKL.from_pretrained("stabilityai/stable-diffusion-2-1", subfolder="vae")
+        elif self.cfg.MODEL.DIFFUSION.BACKBONE == 'DiT':
+            pass 
+        
         
         
         d2_backbone = MaskedBackbone(cfg)
@@ -202,32 +214,26 @@ class TransformerDetectorSD21(nn.Module):
                 The :class:`Instances` object has the following keys:
                 "pred_boxes", "pred_classes", "scores", "pred_masks", "pred_keypoints"
         """
-        images = self.preprocess_image(batched_inputs)  # normalized to [-1,1]
-        images = images.tensor                          # b 3 h w, where h=w=512 for sd2.1 input 
-        
-        # vae encoding 
-        latent_dist = self.vae.encode(images).latent_dist
-        latents = latent_dist.sample() * self.vae.config.scaling_factor     # b 4 64 64 
-        
-        print(batched_inputs[0]['image'].shape)
-        # save_image(images, './tmp.jpg', normalize=True)
-        
-        breakpoint()
-        
-        # sample = torch.randn((1, 4, 64, 64))  # noisy latent
-        # timestep = torch.tensor([100])       # diffusion timestep
-        # encoder_hidden_states = torch.randn((1, 77, 768))  # text encoder output
+        batched_imgs = self.preprocess_image(batched_inputs)  # normalized to [-1,1]
+        images = batched_imgs.tensor                          # b 3 h w, where h=w=512 for sd2.1 input 
+        bs = images.shape[0]
 
-        # output = model(sample, timestep, encoder_hidden_states)
-        # predicted_noise = output.sample
+        # PHO         
+        t = torch.tensor([0], device=self.device).expand(bs)
+        prompt = [""] * bs
+        with torch.no_grad():
+            latent_dist = self.vae.encode(images).latent_dist
+            latents = latent_dist.mode() * self.vae.config.scaling_factor
+            text_inputs = self.tokenizer(prompt, padding="max_length", max_length=77, truncation=True, return_tensors="pt").to(self.device)
+            text_embeddings = self.text_encoder(input_ids=text_inputs.input_ids).last_hidden_state  # (b, 77, 768)
+            model_out = self.diffusion_model(
+                sample=latents,
+                timestep=t,
+                encoder_hidden_states=text_embeddings,
+                model_cfg=self.cfg.MODEL,
+            )
+        output = self.testr(model_out['unet_feat'])
         
-        extracted_feats = self.diffusion_model(sample=latents,
-                                               timestep=,
-                                               encoder_hidden_states=
-                                               )
-        output = self.testr(extracted_feats)
-
-
         if self.training:
             gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
             targets = self.prepare_targets(gt_instances)
@@ -236,19 +242,53 @@ class TransformerDetectorSD21(nn.Module):
             for k in loss_dict.keys():
                 if k in weight_dict:
                     loss_dict[k] *= weight_dict[k]
-            return loss_dict
+
+            ctrl_point_cls = output["pred_logits"]
+            ctrl_point_coord = output["pred_ctrl_points"]
+            text_pred = output["pred_texts"]
+            results = self.inference(ctrl_point_cls, ctrl_point_coord, text_pred, batched_imgs.image_sizes)
+            processed_results = []
+            for results_per_image, input_per_image, image_size in zip(results, batched_inputs, batched_imgs.image_sizes):
+                height = input_per_image.get("height", image_size[0])
+                width = input_per_image.get("width", image_size[1])
+                r = detector_postprocess(results_per_image, height, width)
+                processed_results.append({"instances": r})
+            return loss_dict, processed_results
         else:
             ctrl_point_cls = output["pred_logits"]
             ctrl_point_coord = output["pred_ctrl_points"]
             text_pred = output["pred_texts"]
-            results = self.inference(ctrl_point_cls, ctrl_point_coord, text_pred, images.image_sizes)
+            results = self.inference(ctrl_point_cls, ctrl_point_coord, text_pred, batched_imgs.image_sizes)
             processed_results = []
-            for results_per_image, input_per_image, image_size in zip(results, batched_inputs, images.image_sizes):
+            for results_per_image, input_per_image, image_size in zip(results, batched_inputs, batched_imgs.image_sizes):
                 height = input_per_image.get("height", image_size[0])
                 width = input_per_image.get("width", image_size[1])
                 r = detector_postprocess(results_per_image, height, width)
                 processed_results.append({"instances": r})
             return processed_results
+        
+        
+        # if self.training:
+        #     gt_instances = [x["instances"].to(self.device) for x in batched_inputs]
+        #     targets = self.prepare_targets(gt_instances)
+        #     loss_dict = self.criterion(output, targets)
+        #     weight_dict = self.criterion.weight_dict
+        #     for k in loss_dict.keys():
+        #         if k in weight_dict:
+        #             loss_dict[k] *= weight_dict[k]
+        #     return loss_dict
+        # else:
+        #     ctrl_point_cls = output["pred_logits"]
+        #     ctrl_point_coord = output["pred_ctrl_points"]
+        #     text_pred = output["pred_texts"]
+        #     results = self.inference(ctrl_point_cls, ctrl_point_coord, text_pred, images.image_sizes)
+        #     processed_results = []
+        #     for results_per_image, input_per_image, image_size in zip(results, batched_inputs, images.image_sizes):
+        #         height = input_per_image.get("height", image_size[0])
+        #         width = input_per_image.get("width", image_size[1])
+        #         r = detector_postprocess(results_per_image, height, width)
+        #         processed_results.append({"instances": r})
+        #     return processed_results
 
     def prepare_targets(self, targets):
         new_targets = []
