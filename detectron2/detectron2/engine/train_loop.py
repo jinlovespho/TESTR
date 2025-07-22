@@ -343,15 +343,15 @@ class SimpleTrainer(TrainerBase):
                 # img_box = img_np.copy()
                 gt_img_poly = gt_img_np.copy()
                 # boxes = gt_anns.gt_boxes.tensor.detach().cpu().numpy()   # shape: (N, 4)
-                polys = gt_anns.polygons                        # list of list of polygons
-                for j in range(len(polys)):
+                gt_polys = gt_anns.polygons                        # list of list of polygons
+                for j in range(len(gt_polys)):
                     # box = boxes[j]  # [x1, y1, x2, y2]
-                    poly = polys[j]  # list of (N, 2) polygons
+                    gt_poly = gt_polys[j]  # list of (N, 2) polygons
                     # Draw bounding box
                     # x1, y1, x2, y2 = map(int, box)
-                    poly_np = np.array(poly).astype(np.int32).reshape(-1, 2)
+                    gt_poly_np = np.array(gt_poly).astype(np.int32).reshape(-1, 2)
                     # cv2.rectangle(img_box, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.polylines(gt_img_poly, [poly_np], isClosed=True, color=(0, 255, 0), thickness=2)
+                    cv2.polylines(gt_img_poly, [gt_poly_np], isClosed=True, color=(0, 255, 0), thickness=2)
                 # cv2.imwrite('./img_box.jpg', img_box)
                 # cv2.imwrite('./img_poly.jpg', img_poly)
                 
@@ -365,15 +365,14 @@ class SimpleTrainer(TrainerBase):
                 # img_box = img_np.copy()
                 pred_img_poly = pred_img_np.copy()
                 # boxes = pred_anns.gt_boxes.tensor.detach().cpu().numpy()   # shape: (N, 4)
-                polys = pred_anns.polygons                        # list of list of polygons
-                for j in range(len(polys)):
-                    # box = boxes[j]  # [x1, y1, x2, y2]
-                    poly = polys[j]  # list of (N, 2) polygons
-                    # Draw bounding box
-                    # x1, y1, x2, y2 = map(int, box)
-                    poly_np = np.array(poly).astype(np.int32).reshape(-1, 2)
-                    # cv2.rectangle(img_box, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    cv2.polylines(pred_img_poly, [poly_np], isClosed=True, color=(0, 255, 0), thickness=2)
+                pred_polys = pred_anns.polygons                        # list of list of polygons
+                for j in range(len(pred_polys)):
+                    pred_poly = pred_polys[j]  # list of (N, 2) polygons
+                    if isinstance(pred_poly, torch.Tensor):
+                        pred_poly_np = pred_poly.detach().cpu().numpy().astype(np.int32).reshape(-1, 2)
+                    else:
+                        pred_poly_np = np.array(pred_poly).astype(np.int32).reshape(-1, 2)
+                    cv2.polylines(pred_img_poly, [pred_poly_np], isClosed=True, color=(0, 255, 0), thickness=2)
 
 
                 # log to tensorboard 
