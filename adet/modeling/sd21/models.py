@@ -29,11 +29,9 @@ class TESTR_SD21(nn.Module):
     Same as :class:`detectron2.modeling.ProposalNetwork`.
     Use one stage detector and a second stage for instance-wise prediction.
     """
-    def __init__(self, cfg, backbone):
+    def __init__(self, cfg):
         super().__init__()
         self.device = torch.device(cfg.MODEL.DEVICE)
-
-        self.backbone = backbone
         
         # fmt: off
         self.d_model                 = cfg.MODEL.TRANSFORMER.HIDDEN_DIM

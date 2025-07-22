@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python tools/train_net.py --config-file configs/SD21/Pretrain/TESTR_SD21_Polygon.yaml --num-gpus 1

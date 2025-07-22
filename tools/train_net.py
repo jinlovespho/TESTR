@@ -45,6 +45,8 @@ from adet.config import get_cfg
 from adet.checkpoint import AdetCheckpointer
 from adet.evaluation import TextEvaluator
 
+from torch.utils.tensorboard import SummaryWriter
+
 
 class Trainer(DefaultTrainer):
     """
@@ -187,24 +189,58 @@ class Trainer(DefaultTrainer):
                     break
             return out
 
+        tot_params=[]
+        train_params=[]
         params: List[Dict[str, Any]] = []
         memo: Set[torch.nn.parameter.Parameter] = set()
         for key, value in model.named_parameters(recurse=True):
+            tot_params.append(key)
+            
             if not value.requires_grad:
                 continue
             # Avoid duplicating parameters
             if value in memo:
                 continue
             memo.add(value)
+            
             lr = cfg.SOLVER.BASE_LR
             weight_decay = cfg.SOLVER.WEIGHT_DECAY
+            
+            # PHO - set training params
+            if cfg.MODEL.DIFFUSION.BACKBONE == 'SD21':
+                if cfg.MODEL.DIFFUSION.FREEZE_COMPONENT == 'ALL':
+                    if 'diffusion_model' in key \
+                        or 'vae' in key \
+                            or 'tokenizer' in key \
+                                or 'text_encoder' in key:
+                        continue
 
-            if match_name_keywords(key, cfg.SOLVER.LR_BACKBONE_NAMES):
-                lr = cfg.SOLVER.LR_BACKBONE
-            elif match_name_keywords(key, cfg.SOLVER.LR_LINEAR_PROJ_NAMES):
-                lr = cfg.SOLVER.BASE_LR * cfg.SOLVER.LR_LINEAR_PROJ_MULT
+            elif cfg.MODEL.DIFFUSION.BACKBONE == 'DiT':
+                pass 
+        
+            else: # cfg.MODEL.DIFFUSION.BACKBONE == 'None'
+                if match_name_keywords(key, cfg.SOLVER.LR_BACKBONE_NAMES):
+                    lr = cfg.SOLVER.LR_BACKBONE
+                elif match_name_keywords(key, cfg.SOLVER.LR_LINEAR_PROJ_NAMES):
+                    lr = cfg.SOLVER.BASE_LR * cfg.SOLVER.LR_LINEAR_PROJ_MULT
 
             params += [{"params": [value], "lr": lr, "weight_decay": weight_decay}]
+            train_params.append(key)
+            
+            
+        # PHO - log trainable parameter names
+        logger = logging.getLogger(__name__)
+        logger.info("Training the following parameters:")
+        for name in train_params:
+            logger.info(f"  {name}")
+        
+        
+        # PHO - log to tensorboard 
+        writer = SummaryWriter(log_dir=os.path.join(cfg.OUTPUT_DIR))
+        writer.add_text("Total Params", "\n".join(tot_params))
+        writer.add_text("Training Params", "\n".join(train_params))
+        writer.close()
+
 
         def maybe_add_full_model_gradient_clipping(optim):  # optim: the optimizer class
             # detectron2 doesn't have full model gradient clipping now

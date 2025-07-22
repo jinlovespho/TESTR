@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python demo/demo.py --config-file configs/TESTR/TotalText/TESTR_R_50_Polygon.yaml --input /data/text_spotting/totaltext/train_images_rotate --output ./output/demo --opts MODEL.WEIGHTS weights/totaltext_testr_R_50_polygon.pth MODEL.TRANSFORMER.INFERENCE_TH_TEST 0.3
