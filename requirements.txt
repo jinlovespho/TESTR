@@ -1,0 +1,21 @@
+# python==3.9.23
+# torch==2.2.2 cuda12.1
+# detectron2==0.6 from source pip install -e .
+# adelaidet==0.2.0 current repo pip install -e . 
+termcolor>=1.1
+Pillow>=6.0
+yacs>=0.1.6
+tabulate
+cloudpickle
+matplotlib
+tqdm>4.29.0
+tensorboard
+rapidfuzz==2.15.1
+Polygon3
+shapely
+scikit-image
+editdistance
+opencv-python==4.11.0.86
+numba==0.60.0
+psutil==7.0.0  # from extras_require["all"]
+numpy==1.26.4
