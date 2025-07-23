@@ -1,1 +1,1 @@
-CUDA_VISIBLE_DEVICES=1 python tools/train_net.py --config-file configs/TESTR_R50/Pretrain/TESTR_R50_Polygon.yaml --num-gpus 1
+CUDA_VISIBLE_DEVICES=0 python tools/train_net.py --config-file configs/TESTR_R50/Pretrain/TESTR_R50_Polygon.yaml --num-gpus 1

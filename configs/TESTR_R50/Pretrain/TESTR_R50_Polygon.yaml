@@ -1,10 +1,25 @@
-_BASE_: "Base-Pretrain-Polygon.yaml"
+_BASE_: "../Base-TESTR_R50.yaml"
+
+
+DATASETS:
+  # TRAIN: ("mltbezier_word_poly_train", "totaltext_poly_train", "syntext1_poly_train", "syntext2_poly_train",) 
+  TRAIN: ("mltbezier_word_poly_train", "syntext1_poly_train", "syntext2_poly_train",) 
+  # TRAIN: ("syntext1_poly_train", "syntext2_poly_train",) 
+  TEST: ("totaltext_poly_val",)
+
+
 MODEL:
   # WEIGHTS: "weights/resnet50-19c8e357.pth"
   WEIGHTS: "detectron2://ImageNetPretrained/torchvision/R-50.pkl"
   RESNETS:
     DEPTH: 50
+
   TRANSFORMER:
+    USE_POLYGON: True
+    NUM_CTRL_POINTS: 16
+    LOSS:
+      POINT_TEXT_WEIGHT: 4.0
+
     NUM_FEATURE_LEVELS: 4
     ENC_LAYERS: 6
     DEC_LAYERS: 6
@@ -15,6 +30,7 @@ MODEL:
     NUM_QUERIES: 100
     ENC_N_POINTS: 4
     DEC_N_POINTS: 4
+
 SOLVER:
   AMP:
     ENABLED: False
@@ -25,10 +41,15 @@ SOLVER:
   WARMUP_ITERS: 0
   STEPS: (340000,)
   MAX_ITER: 400000
-  CHECKPOINT_PERIOD: 10000
+  CHECKPOINT_PERIOD: 20000
+
+
 TEST:
   EVAL_PERIOD: 1000
-OUTPUT_DIR: "output/pretrain/syntext_to_totaltext/pho_s18_gpu1_TESTR_R50detectron_lr1e4_bs2_accum12"
+# OUTPUT_DIR: "output/pretrain/syntext_TO_totaltext/pho_serv8_gpu1_TESTR_R50_lr1e4_bs2_accum12"
+OUTPUT_DIR: "output/pretrain/mlt_syntext_TO_totaltext/pho_serv8_gpu0_TESTR_R50_lr1e4_bs2_accum12"
+
+
 
 LOG_ARGS:
   LOG_NUM_IMG: 2

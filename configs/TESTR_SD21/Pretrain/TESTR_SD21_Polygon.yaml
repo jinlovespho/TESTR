@@ -1,7 +1,20 @@
-_BASE_: "Base-Pretrain-Polygon.yaml"
+_BASE_: "../Base-TESTR_SD21.yaml"
+
+
+DATASETS:
+  # TRAIN: ("mltbezier_word_poly_train", "totaltext_poly_train", "syntext1_poly_train", "syntext2_poly_train",) 
+  TRAIN: ("mltbezier_word_poly_train", "syntext1_poly_train", "syntext2_poly_train",) 
+  # TRAIN: ("syntext1_poly_train", "syntext2_poly_train",) 
+  TEST: ("totaltext_poly_val",)
+
 
 MODEL:
   TRANSFORMER:
+    USE_POLYGON: True
+    NUM_CTRL_POINTS: 16
+    LOSS:
+      POINT_TEXT_WEIGHT: 4.0
+
     NUM_FEATURE_LEVELS: 4
     ENC_LAYERS: 6
     DEC_LAYERS: 6
@@ -18,13 +31,15 @@ MODEL:
     FREEZE_COMPONENT: 'ALL'
     EXTRACT_FEAT: True
 
+
 DATALOADER:
   NUM_WORKERS: 4
+
 
 SOLVER:
   AMP:
     ENABLED: False
-  IMS_PER_BATCH: 16
+  IMS_PER_BATCH: 6
   GRAD_ACCUM_STEPS: 4
   BASE_LR: 1e-4
   LR_BACKBONE: 
@@ -33,11 +48,13 @@ SOLVER:
   MAX_ITER: 400000
   CHECKPOINT_PERIOD: 20000
 
+
 TEST:
   EVAL_PERIOD: 1000
-OUTPUT_DIR: "output/pretrain/syn_mlt_total/pho_s18_gpu0123_TESTR_SD21_lr1e4_bs16_accum4"
+OUTPUT_DIR: "output/pretrain/mlt_syntext_TO_totaltext/pho_serv8_gpu2_testr_SD21_lr1e4_bs6_accum4"
+
 
 LOG_ARGS:
-  LOG_NUM_IMG: 2
+  LOG_NUM_IMG: 6
   LOG_EVERY_N: 1000
 
