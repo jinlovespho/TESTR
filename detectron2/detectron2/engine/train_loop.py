@@ -15,6 +15,25 @@ from detectron2.utils.logger import _log_api_usage
 
 import cv2 
 
+import pdb
+import sys
+from typing import Any
+class ForkedPdb(pdb.Pdb):
+    """
+    PDB Subclass for debugging multi-processed code
+    Suggested in: https://stackoverflow.com/questions/4716533/how-to-attach-debugger-to-a-python-subproccess
+    """
+
+    def interaction(self, *args: Any, **kwargs: Any) -> None:
+        _stdin = sys.stdin
+        try:
+            sys.stdin = open("/dev/stdin")
+            pdb.Pdb.interaction(self, *args, **kwargs)
+        finally:
+            sys.stdin = _stdin
+
+
+
 __all__ = ["HookBase", "TrainerBase", "SimpleTrainer", "AMPTrainer"]
 
 
@@ -250,7 +269,7 @@ class SimpleTrainer(TrainerBase):
         data_loader,
         optimizer,
         gather_metric_period=1,
-        zero_grad_before_forward=False,
+        zero_grad_before_forward=True,
         async_write_metrics=False,
         cfg=None
     ):
@@ -291,16 +310,19 @@ class SimpleTrainer(TrainerBase):
         # use only 1 worker so tasks will be executred in order of submitting.
         self.concurrent_executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
+
     def run_step(self):
         assert self.model.training, "[SimpleTrainer] model was changed to eval mode!"
         start = time.perf_counter()
         data = next(self._data_loader_iter)
         data_time = time.perf_counter() - start
-
+ 
+ 
         # Zero grad only once at the start of accumulation
         if self.iter % self.grad_accum_steps == 0 and self.zero_grad_before_forward:
             self.optimizer.zero_grad()
 
+        # model foward pass
         loss_dict, model_out = self.model(data)
         if isinstance(loss_dict, torch.Tensor):
             losses = loss_dict
@@ -308,22 +330,38 @@ class SimpleTrainer(TrainerBase):
         else:
             losses = sum(loss_dict.values())
 
+
         # Scale loss down to average over accumulation steps
         losses = losses / self.grad_accum_steps
-
-        # Backpropagate scaled loss
-        losses.backward()
-
+                
+        
+        # loss update
+        if (self.iter + 1) % self.grad_accum_steps == 0:
+            # Final accumulation step: sync gradients, optimizer step
+            losses.backward()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
+        else:
+            if isinstance(self.model, torch.nn.parallel.DistributedDataParallel):
+                with self.model.no_sync():
+                    losses.backward()
+            else:
+                losses.backward()
         self.after_backward()
+        
+        
+        # write metric
+        if self.async_write_metrics:
+            self.concurrent_executor.submit(self._write_metrics, loss_dict, data_time, iter=self.iter)
+        else:
+            self._write_metrics(loss_dict, data_time)
+        
         
         # Log images every N iterations
         if self.iter % self.cfg.LOG_ARGS.LOG_EVERY_N == 0:
             
-            if self.cfg.LOG_ARGS.LOG_NUM_IMG > len(data):
-                LOG_NUM_IMG = len(data)
-            else:
-                LOG_NUM_IMG = self.cfg.LOG_ARGS.LOG_NUM_IMG
-                
+            LOG_NUM_IMG = min(self.cfg.LOG_ARGS.LOG_NUM_IMG, len(data))
+            
             for i in range(LOG_NUM_IMG):                    
                 file_path = data[i]['file_name']
                 orig_height = data[i]['height']
@@ -388,19 +426,7 @@ class SimpleTrainer(TrainerBase):
                 pred_img_poly_tensor = pred_img_poly_tensor / 255.0  # Normalize to [0, 1]
                 # storage.put_image(f"VIS_train_pred/pred_poly_{img_id}", pred_img_poly_tensor)
                 storage.put_image(f"VIS_train_pred/pred_poly_{i}", pred_img_poly_tensor)
-        
-        
-        if self.async_write_metrics:
-            self.concurrent_executor.submit(
-                self._write_metrics, loss_dict, data_time, iter=self.iter
-            )
-        else:
-            self._write_metrics(loss_dict, data_time)
-
-        # Step optimizer only at accumulation boundary
-        if (self.iter + 1) % self.grad_accum_steps == 0:
-            self.optimizer.step()
-            self.optimizer.zero_grad()
+    
 
     @property
     def _data_loader_iter(self):

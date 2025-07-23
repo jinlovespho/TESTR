@@ -213,6 +213,7 @@ class Trainer(DefaultTrainer):
                         or 'vae' in key \
                             or 'tokenizer' in key \
                                 or 'text_encoder' in key:
+                        value.requires_grad = False
                         continue
 
             elif cfg.MODEL.DIFFUSION.BACKBONE == 'DiT':
