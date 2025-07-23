@@ -1,6 +1,8 @@
 _BASE_: "Base-Pretrain-Polygon.yaml"
-
 MODEL:
+  WEIGHTS: "weights/resnet152-b121ed2d.pth"
+  RESNETS:
+    DEPTH: 152
   TRANSFORMER:
     NUM_FEATURE_LEVELS: 4
     ENC_LAYERS: 6
@@ -12,32 +14,21 @@ MODEL:
     NUM_QUERIES: 100
     ENC_N_POINTS: 4
     DEC_N_POINTS: 4
-  
-  DIFFUSION:
-    BACKBONE: "SD21"
-    FREEZE_COMPONENT: 'ALL'
-    EXTRACT_FEAT: True
-
-DATALOADER:
-  NUM_WORKERS: 4
-
 SOLVER:
   AMP:
     ENABLED: False
-  IMS_PER_BATCH: 6
-  GRAD_ACCUM_STEPS: 4
+  IMS_PER_BATCH: 1
+  GRAD_ACCUM_STEPS: 24
   BASE_LR: 1e-4
-  LR_BACKBONE: 
+  LR_BACKBONE: 1e-5
   WARMUP_ITERS: 0
   STEPS: (340000,)
   MAX_ITER: 400000
   CHECKPOINT_PERIOD: 10000
-
 TEST:
-  EVAL_PERIOD: 100
-OUTPUT_DIR: "output/pretrain/syn_mlt_totaltext/TESTpho_s18_gpu1_TESTR_SD21_lr1e4_bs6_accum4"
+  EVAL_PERIOD: 1000
+OUTPUT_DIR: "output/pretrain/syntext_to_totaltext/pho_s18_gpu0_TESTR_R152_lr1e4_bs1_accum24"
 
 LOG_ARGS:
   LOG_NUM_IMG: 2
-  LOG_EVERY_N: 100
-
+  LOG_EVERY_N: 1000
